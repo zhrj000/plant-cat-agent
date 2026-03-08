@@ -1,0 +1,20 @@
+# 植物猫咪安全助手 - 依赖包列表
+
+# ===== 必需依赖 =====
+openai>=1.0.0              # 用于调用LLM API（DeepSeek/OpenAI）
+python-dotenv>=1.0.0       # 用于从.env文件加载环境变量
+
+# ===== 可选依赖 =====
+# 以下依赖用于扩展功能，如不需要可不安装
+
+# requests==2.31.0         # 用于网络请求（如调用植物数据库API）
+# beautifulsoup4==4.12.2   # 用于网页爬虫（从网络获取植物信息）
+# pytest==7.4.0            # 用于单元测试（更强大的测试框架）
+# pandas==2.1.0            # 用于数据分析（处理大量植物数据）
+# flask==3.0.0             # 用于创建Web API（将Agent部署为网页服务）
+
+# 安装方法：
+# pip install -r requirements.txt
+
+# 或者使用国内镜像加速：
+# pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
