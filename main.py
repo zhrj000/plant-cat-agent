@@ -121,6 +121,10 @@ class ThinkingAgent:
         # 在提示词中添加工具描述
         decision_prompt += f"\n\n可用工具详情：\n{tools_description}"
 
+        # 显示发送给LLM的提示词（前200字符）
+        prompt_preview = decision_prompt[:200] + "..." if len(decision_prompt) > 200 else decision_prompt
+        print(f"📤 发送给LLM的提示词（预览）：\n{prompt_preview}\n")
+
         messages = [{"role": "user", "content": decision_prompt}]
 
         # 调用LLM进行决策
@@ -140,21 +144,52 @@ class ThinkingAgent:
 
         # 从LLM响应中提取工具选择
         selected_tool = None
+        parsed_intent = "未知意图"
+        parsed_reason = "未解析到原因"
 
-        # 简单的解析逻辑：查找工具名称
+        # 尝试解析JSON格式的响应
         if reasoning_result:
-            for tool_name in Tools.DEFINITIONS.keys():
-                if tool_name in reasoning_result.lower():
-                    selected_tool = tool_name
-                    break
+            # 尝试查找JSON格式
+            import json
+            try:
+                # 查找JSON部分
+                start_idx = reasoning_result.find('{')
+                end_idx = reasoning_result.rfind('}') + 1
+                if start_idx != -1 and end_idx > start_idx:
+                    json_str = reasoning_result[start_idx:end_idx]
+                    parsed_data = json.loads(json_str)
+                    selected_tool = parsed_data.get("tool")
+                    parsed_intent = parsed_data.get("intent", "未知意图")
+                    parsed_reason = parsed_data.get("reason", "未解析到原因")
+
+                    print(f"📋 解析到的JSON数据：")
+                    print(f"   意图: {parsed_intent}")
+                    print(f"   工具: {selected_tool}")
+                    print(f"   原因: {parsed_reason}")
+            except (json.JSONDecodeError, ValueError):
+                # 如果不是JSON格式，使用简单的文本匹配
+                print(f"📝 LLM响应不是标准JSON格式，使用文本匹配...")
+                for tool_name in Tools.DEFINITIONS.keys():
+                    if tool_name in reasoning_result.lower():
+                        selected_tool = tool_name
+                        break
+
+                # 尝试提取意图和原因
+                if "intent" in reasoning_result.lower():
+                    lines = reasoning_result.split('\n')
+                    for line in lines:
+                        if "intent" in line.lower():
+                            parsed_intent = line.split(':')[-1].strip()
+                        if "reason" in line.lower():
+                            parsed_reason = line.split(':')[-1].strip()
 
         if selected_tool:
             tool_info = Tools.DEFINITIONS[selected_tool]
-            self._print_step(3, "决策", f"✅ 决策：使用【{tool_info['name']}】工具\n   原因：{reasoning_result[:100]}...")
+            self._print_step(3, "决策", f"✅ 决策：使用【{tool_info['name']}】工具\n\n📋 解析结果：\n   用户意图：{parsed_intent}\n   选择工具：{selected_tool}\n   选择原因：{parsed_reason}")
             return selected_tool
         else:
             # 默认使用AI专家工具
-            self._print_step(3, "决策", f"⚠️  无法确定工具，默认使用【AI专家】工具")
+            self._print_step(3, "决策", f"⚠️  无法确定工具，默认使用【AI专家】工具\n\n📋 解析结果：\n   用户意图：{parsed_intent}\n   选择工具：ask_ai_expert（默认）\n   选择原因：无法解析LLM响应")
             return "ask_ai_expert"
 
     def _action(self, selected_tool, user_input):
@@ -164,24 +199,44 @@ class ThinkingAgent:
         tool_info = Tools.DEFINITIONS.get(selected_tool, Tools.DEFINITIONS["ask_ai_expert"])
         self._print_step(4, "行动", f"⚡ 正在执行工具：【{tool_info['name']}】")
 
+        print(f"🔧 工具详情：")
+        print(f"   名称: {tool_info['name']}")
+        print(f"   描述: {tool_info.get('description', '无描述')}")
+        print(f"   优先级: {tool_info['priority']}")
+        print(f"   成本: {tool_info['cost']}")
+        print(f"   速度: {tool_info['speed']}")
+        print(f"   输入参数: {user_input}")
+
         try:
             if selected_tool == "ask_ai_expert":
+                print(f"🤖 调用AI专家分析植物：{user_input}")
                 result = self._execute_ask_ai(user_input)
             elif selected_tool == "query_plant_database":
+                print(f"📊 查询植物数据库：{user_input}")
                 result = self._execute_query_database(user_input)
             elif selected_tool == "list_safe_plants":
+                print(f"🌿 列出所有对猫安全的植物")
                 result = self._execute_list_safe_plants()
             elif selected_tool == "chat_with_user":
+                print(f"💬 与用户对话：{user_input}")
                 result = self._execute_chat(user_input)
             else:
                 result = "❌ 未知工具"
 
-            self._print_step(4, "行动", f"✅ 工具执行完成\n   结果：{result[:100]}...")
+            # 显示完整结果
+            print(f"\n📄 工具执行结果：")
+            print(f"{'─'*40}")
+            print(result)
+            print(f"{'─'*40}")
+
+            self._print_step(4, "行动", f"✅ 工具执行完成\n\n📊 执行摘要：\n   工具：{tool_info['name']}\n   输入：{user_input}\n   状态：成功完成")
             return result
 
         except Exception as e:
-            self._print_step(4, "行动", f"❌ 工具执行失败：{e}")
-            return f"❌ 工具执行失败：{e}"
+            error_msg = f"❌ 工具执行失败：{e}"
+            print(f"\n❌ 错误信息：{e}")
+            self._print_step(4, "行动", f"❌ 工具执行失败\n\n📊 执行摘要：\n   工具：{tool_info['name']}\n   输入：{user_input}\n   状态：失败\n   错误：{e}")
+            return error_msg
 
     def _evaluation(self, action_result):
         """
@@ -189,12 +244,51 @@ class ThinkingAgent:
         """
         self._print_step(5, "评估", "📊 正在评估任务完成情况...")
 
-        # 简单的评估逻辑：检查结果是否有效
-        if action_result and not action_result.startswith("❌"):
-            self._print_step(5, "评估", "✅ 任务状态：完成\n   评估：结果有效，任务成功完成")
+        print(f"📈 评估标准：")
+        print(f"   1. 结果不为空")
+        print(f"   2. 结果不以错误标记开头（❌）")
+        print(f"   3. 结果长度合理（> 10字符）")
+
+        # 详细的评估逻辑
+        evaluation_details = []
+
+        # 检查1：结果是否为空
+        if not action_result:
+            evaluation_details.append("❌ 结果为空")
+            is_valid = False
+        else:
+            evaluation_details.append("✅ 结果不为空")
+
+            # 检查2：是否以错误标记开头
+            if action_result.startswith("❌"):
+                evaluation_details.append("❌ 结果包含错误标记")
+                is_valid = False
+            else:
+                evaluation_details.append("✅ 结果无错误标记")
+
+                # 检查3：结果长度是否合理
+                if len(action_result) < 10:
+                    evaluation_details.append("⚠️  结果可能过短")
+                    is_valid = True  # 仍然认为是有效的，只是可能不完整
+                else:
+                    evaluation_details.append("✅ 结果长度合理")
+                    is_valid = True
+
+        # 显示评估详情
+        print(f"\n📋 评估详情：")
+        for detail in evaluation_details:
+            print(f"   {detail}")
+
+        # 计算评估分数（简单示例）
+        total_checks = len(evaluation_details)
+        passed_checks = sum(1 for d in evaluation_details if d.startswith("✅"))
+        score = passed_checks / total_checks if total_checks > 0 else 0
+
+        if is_valid:
+            self._print_step(5, "评估", f"✅ 任务状态：完成\n\n📊 评估报告：\n   评估分数：{score:.0%} ({passed_checks}/{total_checks})\n   总体结论：任务成功完成\n   建议：结果有效，可以返回给用户")
             return True
         else:
-            self._print_step(5, "评估", "⚠️  任务状态：未完成\n   评估：结果无效或出现错误")
+            self._print_step(5, "评估", f"⚠️  任务状态：未完成\n\n📊 评估报告：\n   评估分数：{score:.0%} ({passed_checks}/{total_checks})\n   总体结论：任务失败或结果无效\n   建议：需要重新执行或使用其他工具")
             return False
 
     def _execute_ask_ai(self, plant_name):
